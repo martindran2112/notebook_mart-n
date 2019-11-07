@@ -12,7 +12,7 @@ object MainRunner extends App {
 
     val Spark =  SparkSession.builder.master("local[*]").appName("preproc").getOrCreate()
 
-   /* // PREPROCESAR DATOS
+    // PREPROCESAR DATOS
 
     val path_activity = "activityObfmod5.parquet"
     val path_sb = "sbObfmod5.parquet"
@@ -22,7 +22,7 @@ object MainRunner extends App {
     Preproc.saveFeaturesAndLabel(Spark, path_df_act_fugas_mes_previos, path_sb )
 
     //
-*/
+
       // ENTRENAR Y TESTEAR MODELOS
      val Features_columns = Array("deuda_vigente",  "deuda_directa_morosa90", "deuda_directa_vencida", "deuda_directa_mora180",
                          "deuda_indirecta_mora180", "deuda_indirecta_vigente", "deuda_indirecta_vencida","deuda_directa_comercial",
