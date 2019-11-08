@@ -1,9 +1,8 @@
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.{DataFrame, SQLContext}
+
 import preprocesamiento.Preproc
 import preprocesamiento.FeatureSelectionYClasificadores
-import org.apache.spark.sql.{Dataset, Row, SparkSession}
+import org.apache.spark.sql.SparkSession
 
 object MainRunner extends App {
 
@@ -12,8 +11,8 @@ object MainRunner extends App {
     val Spark =  SparkSession.builder.master("local[*]").appName("preproc").getOrCreate()
 
     // PREPROCESAR DATOS  (Si ya existen los parquet en  path hdfs://localhost:8020/tmp/  borrarlos, o va a tirar error )
-    
-    val path_activity = "hdfs://localhost:8020/tmp/archivos/activityObfmod5.parquet" // "activityObfmod5.parquet"
+
+   /* val path_activity = "hdfs://localhost:8020/tmp/archivos/activityObfmod5.parquet" // "activityObfmod5.parquet"
     val path_sb = "hdfs://localhost:8020/tmp/archivos/sbObfmod5.parquet"  // "sbObfmod5.parquet"
     val path_df_act_fugas_mes_previos = "hdfs://localhost:8020/tmp/df_act_fugas_mes_previos.parquet"//"df_act_fugas_mes_previos.parquet"
 
@@ -21,7 +20,7 @@ object MainRunner extends App {
     //Preproc.saveFeaturesAndLabel(Spark, path_df_act_fugas_mes_previos, path_sb )
 
      Preproc.guardarActivityConFugasHDFS(Spark, path_activity, path_df_act_fugas_mes_previos)
-     Preproc.saveFeaturesAndLabelHDFS(Spark, path_df_act_fugas_mes_previos, path_sb )
+     Preproc.saveFeaturesAndLabelHDFS(Spark, path_df_act_fugas_mes_previos, path_sb ) */
 
     //
 

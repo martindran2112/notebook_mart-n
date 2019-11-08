@@ -1,16 +1,13 @@
 package preprocesamiento
-
+import org.apache.avro.io.Encoder
 import preprocesamiento.Preproc.readParquetHDFS
-
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.ml.classification.{LogisticRegression,
-                                            LogisticRegressionModel,
-                                            DecisionTreeClassifier,
-                                            DecisionTreeClassificationModel,
-                                            RandomForestClassifier,
-                                            RandomForestClassificationModel}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.ml.classification.{DecisionTreeClassificationModel, DecisionTreeClassifier, LogisticRegression, LogisticRegressionModel, RandomForestClassificationModel, RandomForestClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.mllib.evaluation.{BinaryClassificationMetrics, MulticlassMetrics}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.types.DoubleType
 
 import scala.util.Either
 
@@ -35,13 +32,14 @@ object FeatureSelectionYClasificadores  {
   }
 
 
-  def logisticRegression(df_train: DataFrame): LogisticRegressionModel  = {
+  def TrainLogisticRegression(df_train: DataFrame): LogisticRegressionModel  = {
 
     val lr = new LogisticRegression().setMaxIter(10).setFeaturesCol("features").setLabelCol("estado")
     (lr.fit(df_train))
+
   }
 
-  def DecisionTree(df_train: DataFrame): DecisionTreeClassificationModel = {
+  def TrainDecisionTree(df_train: DataFrame): DecisionTreeClassificationModel = {
 
     val dt = new DecisionTreeClassifier()
       .setImpurity("entropy")
@@ -49,9 +47,13 @@ object FeatureSelectionYClasificadores  {
       .setLabelCol("estado")
 
     (dt.fit(df_train))
+//////////////////////////////////////////////////
   }
 
-  def RandomForest(df_train: DataFrame, N_trees: Int, Seed: Int): RandomForestClassificationModel = {
+
+
+
+  def TrainRandomForest(df_train: DataFrame, N_trees: Int, Seed: Int): RandomForestClassificationModel = {
 
     val rf = new RandomForestClassifier()
       .setImpurity("entropy")
@@ -66,7 +68,7 @@ object FeatureSelectionYClasificadores  {
   }
 
 
-  def Evaluador(df_test: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel]): String = {
+  def Evaluador(df_test: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel]): (String, Double) = {
 
     val y = model match {
       case Left(l) => l match{
@@ -85,7 +87,17 @@ object FeatureSelectionYClasificadores  {
 
     val mAccuracy = evaluator.evaluate(predicciones)
 
-    "Accuracy => " +  "%3.2f".format(mAccuracy*100)  + "%"
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    val predictionAndLabelsRDD = predicciones.withColumn("prediction", predicciones("prediction").cast(DoubleType))
+      .withColumn("estado", predicciones("estado").cast(DoubleType))
+              .rdd.map(x => (x.getDouble(0), x.getDouble(1)))   /// PASO A UN RDD([Double, Double])
+
+    val bMetrics = new BinaryClassificationMetrics(predictionAndLabelsRDD)
+
+
+
+    ("Accuracy => " +  "%3.2f".format(mAccuracy*100)  + "%", bMetrics.areaUnderROC() )
 
   }
 
@@ -95,31 +107,31 @@ object FeatureSelectionYClasificadores  {
 
     df_train.cache(); df_test.cache()
 
-    val modelLogReg = logisticRegression(df_train)
-    val Acc_Logit_test = Evaluador(df_test, Right(modelLogReg))
-    val Acc_Logit_train = Evaluador(df_train, Right(modelLogReg))
+    val modelLogReg = TrainLogisticRegression(df_train)
+    val (acc_Logit_test, auc_Logit_test) = Evaluador(df_test, Right(modelLogReg))
+    val (acc_Logit_train, auc_Logit_train) = Evaluador(df_train, Right(modelLogReg))
 
-    val modelDecTree = DecisionTree(df_train)
-    val Acc_DecTree_test = Evaluador(df_test, Left(Left(modelDecTree)))
-    val Acc_DecTree_train= Evaluador(df_train, Left(Left(modelDecTree)))
+    val modelDecTree = TrainDecisionTree(df_train)
+    val (acc_DecTree_test, auc_DecTree_test)= Evaluador(df_test, Left(Left(modelDecTree)))
+    val (acc_DecTree_train, auc_DecTree_train)= Evaluador(df_train, Left(Left(modelDecTree)))
 
-    val modelRandFor = RandomForest(df_train,20, 54)
-    val Acc_RandFor_test = Evaluador(df_test, Left(Right(modelRandFor)))
-    val Acc_RandFor_train = Evaluador(df_train, Left(Right(modelRandFor)))
+    val modelRandFor = TrainRandomForest(df_train,20, 54)
+    val (acc_RandFor_test, auc_RandFor_test) = Evaluador(df_test, Left(Right(modelRandFor)))
+    val (acc_RandFor_train, auc_RandFor_train) = Evaluador(df_train, Left(Right(modelRandFor)))
 
     println("Regresión Logística: ")
-    println("Train " + Acc_Logit_train + "\n")
-    println("Test " + Acc_Logit_test + "\n")
+    println("Train " + acc_Logit_train +  ";  AUC = " + auc_Logit_train  + "\n")
+    println("Test " + acc_Logit_test +  ";  AUC = " + auc_Logit_test + "\n")
     println("-------------------------")
 
     println("Decision Tree: ")
-    println("Train " + Acc_DecTree_train + "\n")
-    println("Test " + Acc_DecTree_test + "\n")
+    println("Train " + acc_DecTree_train +  ";  AUC = " + auc_DecTree_train +  "\n")
+    println("Test " + acc_DecTree_test +  ";  AUC = " + auc_DecTree_test +   "\n")
     println("-------------------------")
 
     println("Random Forest: ")
-    println("Train " + Acc_RandFor_train + "\n")
-    println("Test " + Acc_RandFor_test + "\n")
+    println("Train " + acc_RandFor_train +  ";  AUC = " + auc_RandFor_train +  "\n")
+    println("Test " + acc_RandFor_test +  ";  AUC = " + auc_RandFor_test +   "\n")
 
   }
 
