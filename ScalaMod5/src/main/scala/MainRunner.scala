@@ -1,7 +1,6 @@
 
-import org.apache.spark.mllib.linalg._
-import org.apache.spark.mllib.stat.Statistics
-import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.{DataFrame, SQLContext}
 import preprocesamiento.Preproc
 import preprocesamiento.FeatureSelectionYClasificadores
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
@@ -12,14 +11,17 @@ object MainRunner extends App {
 
     val Spark =  SparkSession.builder.master("local[*]").appName("preproc").getOrCreate()
 
-    // PREPROCESAR DATOS
+    // PREPROCESAR DATOS  (Si ya existen los parquet en  path hdfs://localhost:8020/tmp/  borrarlos, o va a tirar error )
+    
+    val path_activity = "hdfs://localhost:8020/tmp/archivos/activityObfmod5.parquet" // "activityObfmod5.parquet"
+    val path_sb = "hdfs://localhost:8020/tmp/archivos/sbObfmod5.parquet"  // "sbObfmod5.parquet"
+    val path_df_act_fugas_mes_previos = "hdfs://localhost:8020/tmp/df_act_fugas_mes_previos.parquet"//"df_act_fugas_mes_previos.parquet"
 
-    val path_activity = "activityObfmod5.parquet"
-    val path_sb = "sbObfmod5.parquet"
-    val path_df_act_fugas_mes_previos = "df_act_fugas_mes_previos.csv"
+    //Preproc.guardarActivityConFugas(Spark, path_activity, path_df_act_fugas_mes_previos)
+    //Preproc.saveFeaturesAndLabel(Spark, path_df_act_fugas_mes_previos, path_sb )
 
-    Preproc.guardarActivityConFugas(Spark, path_activity, path_df_act_fugas_mes_previos)
-    Preproc.saveFeaturesAndLabel(Spark, path_df_act_fugas_mes_previos, path_sb )
+     Preproc.guardarActivityConFugasHDFS(Spark, path_activity, path_df_act_fugas_mes_previos)
+     Preproc.saveFeaturesAndLabelHDFS(Spark, path_df_act_fugas_mes_previos, path_sb )
 
     //
 
@@ -29,7 +31,8 @@ object MainRunner extends App {
                          "deuda_directa_cred_consumo", "deuda_directa_hipotecaria", "deuda_directa_comercial_ext", "deuda_directa_leasing",
                          "deuda_morosa_leasing", "monto_lineas_cred_disp")
 
-     FeatureSelectionYClasificadores.EntrenarModelosYEvaluar(Spark, Features_columns)
+     val path_feat_and_label = "hdfs://localhost:8020/tmp/dataFrame target and features(fuga 3 meses anteriores).parquet"  // "dataFrame target and features(fuga 3 meses anteriores).parquet"
+     FeatureSelectionYClasificadores.EntrenarModelosYEvaluar(Spark, path_feat_and_label,Features_columns)
   }
 }
 

@@ -11,7 +11,8 @@ object Preproc {
 
   def getDfActivityWithLeads(Spark: SparkSession, name: String): DataFrame = {
 
-    val data_act = Spark.read.format("parquet").option("header", "true").load(name)
+    //val data_act = Spark.read.format("parquet").option("header", "true").load(name)
+    val data_act = readParquetHDFS(Spark, name)
     val df_act_wo_duplicate1 = data_act.withColumn("user_id", data_act("user_id").cast(LongType))
     val df_act_wo_duplicate2 = df_act_wo_duplicate1.dropDuplicates()
     val w = Window.orderBy("user_id","periodo")
@@ -78,7 +79,8 @@ object Preproc {
 
   def readSbAndJoinFugas(Spark: SparkSession, name: String, df_act_fugas: DataFrame): DataFrame = {
 
-    val df_sb = Spark.read.format("parquet").option("header", "true").load(name)
+    //val df_sb = Spark.read.format("parquet").option("header", "true").load(name)
+    val df_sb = readParquetHDFS(Spark, name)
     val df_sb_int = df_sb.dropDuplicates().withColumn("user_id", df_sb("user_id").cast(LongType))
 
     val df_sb_act = df_sb_int.join(df_act_fugas, Seq("user_id", "periodo"))
@@ -102,23 +104,74 @@ object Preproc {
                     "deuda_morosa_leasing",
                     "monto_lineas_cred_disp")
   }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+def writeParquetHDFS(Spark: SparkSession, df: DataFrame, path: String) = {
+  // sc: SparkContext, sqlContext: SQLContext
+
+  df.write.format("parquet").option("header","true").save(path)
+}
+
+def readParquetHDFS(Spark: SparkSession, path: String): DataFrame = {
+
+    val newDataDF = Spark.read.format("parquet").option("header","true").option("inferSchema", "true").load(path)
+
+    newDataDF
+  }
+
+
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   def guardarActivityConFugas(Spark: SparkSession, path: String, save_path: String): Unit = {
+
     val data_act_wo_duplicates = Preproc.getDfActivityWithLeads(Spark, path)
+    Preproc.getDFActivityFugas(Spark, data_act_wo_duplicates).write.format("parquet").option("header", "true").save("df_act_fugas.parquet")//.save("df_act_fugas.csv")
 
-    Preproc.getDFActivityFugas(Spark, data_act_wo_duplicates).write.format("csv").option("header", "true").save("df_act_fugas.csv")
-    val df_act_fugas = Spark.read.format("csv").option("header", "true").option("inferSchema","true").load("df_act_fugas.csv")
+    val df_act_fugas = Spark.read.format("parquet").option("header", "true").option("inferSchema","true").load("df_act_fugas.parquet")//.load("df_act_fugas.csv")
+    val df_FugasPrevMotnhs = Preproc.getDFActivityFugasPrevsMotnhs(Spark, df_act_fugas)
 
-    Preproc.getDFActivityFugasPrevsMotnhs(Spark, df_act_fugas).write.format("csv").option("header", "true").save(save_path)
+  Preproc.getDFActivityFugasPrevsMotnhs(Spark, df_act_fugas).write.format("parquet").option("header", "true").save(save_path)
   }
 
   def saveFeaturesAndLabel(Spark: SparkSession, path_fugas: String, name_sb: String): Unit = {
-    val df_act_fugas_mes_prev = Spark.read.format("csv").option("header", "true").option("inferSchema","true").load(path_fugas)
+    val df_act_fugas_mes_prev = Spark.read.format("parquet").option("header", "true").option("inferSchema","true").load(path_fugas)
 
     Preproc.readSbAndJoinFugas(Spark, name_sb, df_act_fugas_mes_prev)
-      .write.format("csv").option("header", "true").save("dataFrame target and features(fuga 3 meses antes no-current).csv")
+      .write.format("parquet").option("header", "true").save("dataFrame target and features(fuga 3 meses anteriores).parquet")
 
     println("\n \n FEATURES Y LABEL GUARDADOS, PAPÁ!! \n \n")
   }
+
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+  def guardarActivityConFugasHDFS(Spark: SparkSession, path: String, save_path: String): Unit = {
+
+    val data_act_wo_duplicates = Preproc.getDfActivityWithLeads(Spark, path)
+    val data_act_w_fugas = Preproc.getDFActivityFugas(Spark, data_act_wo_duplicates)
+
+    writeParquetHDFS(Spark, data_act_w_fugas,"hdfs://localhost:8020/tmp/df_act_fugas.parquet")
+    val df_act_fugas = readParquetHDFS(Spark,"hdfs://localhost:8020/tmp/df_act_fugas.parquet")
+
+    val df_FugasPrevMotnhs = Preproc.getDFActivityFugasPrevsMotnhs(Spark, df_act_fugas)
+    writeParquetHDFS(Spark, df_FugasPrevMotnhs, save_path)
+
+  }
+
+
+  def saveFeaturesAndLabelHDFS(Spark: SparkSession, path_fugas: String, name_sb: String): Unit = {
+    val df_act_fugas_mes_prev = readParquetHDFS(Spark, path_fugas)
+
+    val JoinSbAndFugas = readSbAndJoinFugas(Spark, name_sb, df_act_fugas_mes_prev)
+
+    writeParquetHDFS(Spark, JoinSbAndFugas, "hdfs://localhost:8020/tmp/dataFrame target and features(fuga 3 meses anteriores).parquet")
+
+    println("\n \n FEATURES Y LABEL GUARDADOS EN HDFS, PAPÁ!! \n \n")
+  }
+
+
 }

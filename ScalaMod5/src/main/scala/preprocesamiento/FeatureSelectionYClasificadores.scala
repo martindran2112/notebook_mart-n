@@ -1,5 +1,7 @@
 package preprocesamiento
 
+import preprocesamiento.Preproc.readParquetHDFS
+
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.ml.classification.{LogisticRegression,
                                             LogisticRegressionModel,
@@ -16,9 +18,7 @@ object FeatureSelectionYClasificadores  {
 
   def featureSelection(Spark: SparkSession, path: String, feature_columns: Array[String], test_size: Double): (DataFrame, DataFrame) = {
 
-    val df_FeatAndLabel = Spark.read.format("csv")
-                          .option("header", "true").option("inferSchema", "true")
-                          .load(path)
+    val df_FeatAndLabel =  readParquetHDFS(Spark, path)  //Spark.read.format("parquet").option("header", "true").option("inferSchema", "true").load(path)
 
     val N_fugas = df_FeatAndLabel.filter("estado = 1").count().toInt
                   println("N° labels con fugas: " + N_fugas + "\n")
@@ -29,7 +29,7 @@ object FeatureSelectionYClasificadores  {
 
     val output = assembler.transform(df_fts_select1)//.select("features", "estado")
 
-    val splits = output.randomSplit(Array(1-test_size, test_size), seed = 12345L)
+    val splits = output.randomSplit(Array(1-test_size, test_size), seed = 1235L)
     (splits(0), splits(1))
 
   }
@@ -89,32 +89,37 @@ object FeatureSelectionYClasificadores  {
 
   }
 
-  def EntrenarModelosYEvaluar(Spark: SparkSession, features_columns: Array[String]): Unit = {
+  def EntrenarModelosYEvaluar(Spark: SparkSession, path: String, features_columns: Array[String]): Unit = {
 
-    val path = "dataFrame target and features(fuga 3 meses anteriores).csv"
     val (df_train, df_test) = featureSelection(Spark, path, features_columns, 0.25)
 
     df_train.cache(); df_test.cache()
 
     val modelLogReg = logisticRegression(df_train)
-    val Acc_Logit = Evaluador(df_test, Right(modelLogReg))
+    val Acc_Logit_test = Evaluador(df_test, Right(modelLogReg))
+    val Acc_Logit_train = Evaluador(df_train, Right(modelLogReg))
 
     val modelDecTree = DecisionTree(df_train)
-    val Acc_DecTree = Evaluador(df_test, Left(Left(modelDecTree)))
+    val Acc_DecTree_test = Evaluador(df_test, Left(Left(modelDecTree)))
+    val Acc_DecTree_train= Evaluador(df_train, Left(Left(modelDecTree)))
 
     val modelRandFor = RandomForest(df_train,20, 54)
-    val Acc_RandFor = Evaluador(df_test, Left(Right(modelRandFor)))
+    val Acc_RandFor_test = Evaluador(df_test, Left(Right(modelRandFor)))
+    val Acc_RandFor_train = Evaluador(df_train, Left(Right(modelRandFor)))
 
     println("Regresión Logística: ")
-    println(Acc_Logit + "\n")
+    println("Train " + Acc_Logit_train + "\n")
+    println("Test " + Acc_Logit_test + "\n")
     println("-------------------------")
 
     println("Decision Tree: ")
-    println(Acc_DecTree + "\n")
+    println("Train " + Acc_DecTree_train + "\n")
+    println("Test " + Acc_DecTree_test + "\n")
     println("-------------------------")
 
     println("Random Forest: ")
-    println(Acc_RandFor + "\n")
+    println("Train " + Acc_RandFor_train + "\n")
+    println("Test " + Acc_RandFor_test + "\n")
 
   }
 
