@@ -1,13 +1,12 @@
 package preprocesamiento
-import org.apache.avro.io.Encoder
 import preprocesamiento.Preproc.readParquetHDFS
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.ml.classification.{DecisionTreeClassificationModel, DecisionTreeClassifier, LogisticRegression, LogisticRegressionModel, RandomForestClassificationModel, RandomForestClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.VectorAssembler
-import org.apache.spark.mllib.evaluation.{BinaryClassificationMetrics, MulticlassMetrics}
-import org.apache.spark.rdd.RDD
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
 import org.apache.spark.sql.types.DoubleType
+import org.apache.spark.ml.stat.Correlation
 
 import scala.util.Either
 
@@ -31,12 +30,28 @@ object FeatureSelectionYClasificadores  {
 
   }
 
+  def getCorrelationMatrix(Spark: SparkSession, path: String, feature_columns: Array[String]): Unit = {
+
+    val df_FeatAndLabel =  readParquetHDFS(Spark, path)  //Spark.read.format("parquet").option("header", "true").option("inferSchema", "true").load(path)
+
+    val N_fugas = df_FeatAndLabel.filter("estado = 1").count().toInt
+
+    val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").union(df_FeatAndLabel.filter("estado = 0").limit(N_fugas))
+
+    val assembler = new VectorAssembler().setInputCols(feature_columns).setOutputCol("features")
+
+    val featuresAndLabel = assembler.transform(df_fts_select1).select("features", "estado")
+
+    val corrMatrix = Correlation.corr(featuresAndLabel, "features", "pearson").head
+    println(corrMatrix)
+  }
+
+
 
   def TrainLogisticRegression(df_train: DataFrame): LogisticRegressionModel  = {
 
     val lr = new LogisticRegression().setMaxIter(10).setFeaturesCol("features").setLabelCol("estado")
     (lr.fit(df_train))
-
   }
 
   def TrainDecisionTree(df_train: DataFrame): DecisionTreeClassificationModel = {
@@ -115,7 +130,7 @@ object FeatureSelectionYClasificadores  {
     val (acc_DecTree_test, auc_DecTree_test)= Evaluador(df_test, Left(Left(modelDecTree)))
     val (acc_DecTree_train, auc_DecTree_train)= Evaluador(df_train, Left(Left(modelDecTree)))
 
-    val modelRandFor = TrainRandomForest(df_train,20, 54)
+    val modelRandFor = TrainRandomForest(df_train,20, 154)
     val (acc_RandFor_test, auc_RandFor_test) = Evaluador(df_test, Left(Right(modelRandFor)))
     val (acc_RandFor_train, auc_RandFor_train) = Evaluador(df_train, Left(Right(modelRandFor)))
 
