@@ -1,12 +1,22 @@
 package preprocesamiento
+import java.net.URI
+
+import org.apache.avro.io.Encoder
 import preprocesamiento.Preproc.readParquetHDFS
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession, types}
 import org.apache.spark.ml.classification.{DecisionTreeClassificationModel, DecisionTreeClassifier, LogisticRegression, LogisticRegressionModel, RandomForestClassificationModel, RandomForestClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
-import org.apache.spark.sql.types.DoubleType
+import org.apache.spark.sql.types.{DoubleType, IntegerType, StructField, StructType}
 import org.apache.spark.ml.stat.Correlation
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions.udf
+import ml.combust.bundle.BundleFile
+import ml.combust.mleap.spark.SparkSupport._
+import org.apache.spark.ml.PipelineModel
+import org.apache.spark.ml.bundle.SparkBundleContext
+import resource._
 
 import scala.util.Either
 
@@ -14,12 +24,13 @@ object FeatureSelectionYClasificadores  {
 
   def featureSelection(Spark: SparkSession, path: String, feature_columns: Array[String], test_size: Double): (DataFrame, DataFrame) = {
 
-    val df_FeatAndLabel =  readParquetHDFS(Spark, path)  //Spark.read.format("parquet").option("header", "true").option("inferSchema", "true").load(path)
+    val df_FeatAndLabel =  readParquetHDFS(Spark, path) //Spark.read.format("parquet").option("header", "true").option("inferSchema", "true").load(path)  //
 
     val N_fugas = df_FeatAndLabel.filter("estado = 1").count().toInt
                   println("N° labels con fugas: " + N_fugas + "\n")
 
-    val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").union(df_FeatAndLabel.filter("estado = 0").limit(N_fugas))
+    //val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").union(df_FeatAndLabel.filter("estado = 0").limit(N_fugas))
+    val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").limit(2000).union(df_FeatAndLabel.filter("estado = 0").limit(2000))
 
     val assembler = new VectorAssembler().setInputCols(feature_columns).setOutputCol("features")
 
@@ -64,9 +75,6 @@ object FeatureSelectionYClasificadores  {
     (dt.fit(df_train))
 //////////////////////////////////////////////////
   }
-
-
-
 
   def TrainRandomForest(df_train: DataFrame, N_trees: Int, Seed: Int): RandomForestClassificationModel = {
 
@@ -148,6 +156,115 @@ object FeatureSelectionYClasificadores  {
     println("Train " + acc_RandFor_train +  ";  AUC = " + auc_RandFor_train +  "\n")
     println("Test " + acc_RandFor_test +  ";  AUC = " + auc_RandFor_test +   "\n")
 
+
+    exportModel(df_train, Left(Left(modelDecTree)))
+
+  }
+
+  def exportModel(df: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel]): Unit ={
+
+    val y = model match {
+      case Left(l) => l match{
+        case Left(l1) => l1
+        case Right(r1) => r1
+      }
+      case Right(r) => r
+    }
+
+    val sparkTransformed = y.transform(df)
+
+    implicit val context = SparkBundleContext().withDataset(sparkTransformed)
+
+    // TODO --> exportar a .jar
+    // "hdfs://localhost:8020/tmp/MODELOS/DECISION_TREE.jar"
+    val pathDecTreeModelo = "jar:file:/home/dran/Escritorio/Martín/Challenge/ScalaMod5/MODELOS/DECISION_TREE.jar"
+
+    (for(modelFile <- managed(BundleFile(pathDecTreeModelo) ) ) yield {
+      y.writeBundle.save(modelFile)(context)
+    }).tried.get
+
+  }
+
+
+  def importAndEvaluate(Spark: SparkSession, path: String, feature_columns: Array[String]):Unit = {
+
+    val df_FeatAndLabel =  readParquetHDFS(Spark, path) //Spark.read.format("parquet").option("header", "true").option("inferSchema", "true").load(path)  //
+
+    val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").limit(100).union(df_FeatAndLabel.filter("estado = 0").limit(100))
+
+    val assembler = new VectorAssembler().setInputCols(feature_columns).setOutputCol("features")
+
+    val df_evaluate = assembler.transform(df_fts_select1).select("features", "estado")
+    df_evaluate.cache()
+
+    val pathDecTreeModelo = "jar:file:/home/dran/Escritorio/Martín/Challenge/ScalaMod5/MODELOS/DECISION_TREE.jar"
+
+    val jarBundle = (for(bundle <- managed(BundleFile(pathDecTreeModelo))) yield {
+      bundle.loadSparkBundle().get
+    }).opt.get
+
+    val loadedModel = jarBundle.root
+
+    val results = loadedModel.transform(df_evaluate)
+
+    results.show(200)
+
+
+  }
+
+
+  def getPrediction(df_test: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel]): DataFrame = {
+
+    val y = model match {
+      case Left(l) => l match{
+        case Left(l1) => l1
+        case Right(r1) => r1
+      }
+      case Right(r) => r
+    }
+
+    y.transform(df_test).select("prediction","estado")
+
+  }
+
+  def Ensamble(Spark: SparkSession, path: String, features_columns: Array[String]): Unit = {
+
+    val (df_train, df_test) = featureSelection(Spark, path, features_columns, 0.25)
+
+    df_train.cache();
+    df_test.cache()
+    val modelLogReg = TrainLogisticRegression(df_train)
+    val modelDecTree = TrainDecisionTree(df_train)
+    val modelRandFor = TrainRandomForest(df_train, 20, 154)
+
+    val pred_LogReg = getPrediction(df_test, Right(modelLogReg)).withColumnRenamed("prediction", "pred_LogReg")
+    val pred_DecTree = getPrediction(df_test, Left(Left(modelDecTree))).withColumnRenamed("prediction", "pred_DecTree")
+    val pred_RandFor = getPrediction(df_test, Left(Right(modelRandFor))).withColumnRenamed("prediction", "pred_RandFor")
+
+    val sumar = udf( (x1: Int, x2: Int, x3: Int) => {
+
+      if (x1 + x2 + x3 >= 2 ) 1.toDouble
+      else 0.toDouble
+
+    });
+
+    val df_pred_sum2 = pred_LogReg.join(pred_DecTree, usingColumn = "estado")//.join(pred_RandFor, usingColumn = "estado")
+
+    val df_pred_sum = df_pred_sum2.join(pred_RandFor, usingColumn = "estado")
+
+    val df_pred_sum4 = df_pred_sum.withColumn("prediction_ensamble", sumar(df_pred_sum("pred_LogReg"), df_pred_sum("pred_DecTree"), df_pred_sum("pred_RandFor") ))
+
+    val df_pred_sum5 = df_pred_sum4.select("estado","prediction_ensamble")
+
+    val evaluator = new MulticlassClassificationEvaluator()
+      .setLabelCol("estado")
+      .setPredictionCol("prediction_ensamble")
+      .setMetricName("accuracy")
+
+    val mAccuracy = evaluator.evaluate(df_pred_sum5)
+
+    println("Accuracy ensamble: " + mAccuracy)
+    df_pred_sum5.show()
   }
 
 

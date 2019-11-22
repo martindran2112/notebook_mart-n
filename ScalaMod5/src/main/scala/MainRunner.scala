@@ -16,11 +16,8 @@ object MainRunner extends App {
     val path_sb = "hdfs://localhost:8020/tmp/archivos/sbObfmod5.parquet"  // "sbObfmod5.parquet"
     val path_df_act_fugas_mes_previos = "hdfs://localhost:8020/tmp/df_act_fugas_mes_previos.parquet"//"df_act_fugas_mes_previos.parquet"
 
-    //Preproc.guardarActivityConFugas(Spark, path_activity, path_df_act_fugas_mes_previos)
-    //Preproc.saveFeaturesAndLabel(Spark, path_df_act_fugas_mes_previos, path_sb )
-
-     Preproc.guardarActivityConFugasHDFS(Spark, path_activity, path_df_act_fugas_mes_previos)
-     Preproc.saveFeaturesAndLabelHDFS(Spark, path_df_act_fugas_mes_previos, path_sb )
+    Preproc.guardarActivityConFugasHDFS(Spark, path_activity, path_df_act_fugas_mes_previos)
+    Preproc.saveFeaturesAndLabelHDFS(Spark, path_df_act_fugas_mes_previos, path_sb )
 
     //
 */
@@ -28,6 +25,7 @@ object MainRunner extends App {
       // FEATURES
 
     val path_feat_and_label = "hdfs://localhost:8020/tmp/dataFrame target and features(fuga 3 meses anteriores).parquet"  // "dataFrame target and features(fuga 3 meses anteriores).parquet"
+    //val path_feat_and_label =  "dataFrame target and features(fuga 3 meses anteriores).parquet"
 
     val Features_columns = Array("deuda_vigente",  "deuda_directa_morosa90", "deuda_directa_vencida", "deuda_directa_mora180",
                                  "deuda_indirecta_mora180")  // con estas features da mejor el accuracy de la LogIt
@@ -35,8 +33,9 @@ object MainRunner extends App {
 /*    val Features_columns = Array("deuda_vigente",  "deuda_directa_morosa90", "deuda_directa_vencida", "deuda_directa_mora180",
                          "deuda_indirecta_mora180", "deuda_indirecta_vigente", "deuda_indirecta_vencida","deuda_directa_comercial",
                          "deuda_directa_cred_consumo", "deuda_directa_hipotecaria", "deuda_directa_comercial_ext", "deuda_directa_leasing",
-                         "deuda_morosa_leasing", "monto_lineas_cred_disp")*/
-
+                         "deuda_morosa_leasing", "monto_lineas_cred_disp")
+*/
+      //FeatureSelectionYClasificadores.Ensamble(Spark, path_feat_and_label ,Features_columns)
 
       // ANALIZAR CORRELACIONES
 
@@ -45,6 +44,7 @@ object MainRunner extends App {
       // ENTRENAR Y TESTEAR MODELOS  TODO --> ver correlaciones y p-values!
 
      FeatureSelectionYClasificadores.EntrenarModelosYEvaluar(Spark, path_feat_and_label,Features_columns)
+     //FeatureSelectionYClasificadores.importAndEvaluate(Spark,path_feat_and_label, Features_columns)
 
     // OBS: Comparando la accuracy entre los datos completos y parciales (mod5), no hay diferencia. Es lo mismo usar todoo el dataset que el 20%
 

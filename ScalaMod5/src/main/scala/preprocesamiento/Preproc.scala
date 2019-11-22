@@ -154,8 +154,8 @@ def readParquetHDFS(Spark: SparkSession, path: String): DataFrame = {
     val data_act_wo_duplicates = Preproc.getDfActivityWithLeads(Spark, path)
     val data_act_w_fugas = Preproc.getDFActivityFugas(Spark, data_act_wo_duplicates)
 
-    writeParquetHDFS(Spark, data_act_w_fugas,"hdfs://localhost:8020/tmp/df_act_fugas2.parquet")
-    val df_act_fugas = readParquetHDFS(Spark,"hdfs://localhost:8020/tmp/df_act_fugas2.parquet")
+    writeParquetHDFS(Spark, data_act_w_fugas,"hdfs://localhost:8020/tmp/df_act_fugas.parquet")
+    val df_act_fugas = readParquetHDFS(Spark,"hdfs://localhost:8020/tmp/df_act_fugas.parquet")
 
     val df_FugasPrevMotnhs = Preproc.getDFActivityFugasPrevsMotnhs(Spark, df_act_fugas)
     writeParquetHDFS(Spark, df_FugasPrevMotnhs, save_path)
@@ -168,7 +168,7 @@ def readParquetHDFS(Spark: SparkSession, path: String): DataFrame = {
 
     val JoinSbAndFugas = readSbAndJoinFugas(Spark, name_sb, df_act_fugas_mes_prev)
 
-    writeParquetHDFS(Spark, JoinSbAndFugas, "hdfs://localhost:8020/tmp/dataFrame target and features(fuga 3 meses anteriores)2.parquet")
+    writeParquetHDFS(Spark, JoinSbAndFugas, "hdfs://localhost:8020/tmp/dataFrame target and features(fuga 3 meses anteriores).parquet")
 
     println("\n \n FEATURES Y LABEL GUARDADOS EN HDFS, PAPÁ!! \n \n")
   }
