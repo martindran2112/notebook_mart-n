@@ -2,7 +2,10 @@
 
 import preprocesamiento.Preproc
 import preprocesamiento.FeatureSelectionYClasificadores
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
+
+import scala.collection.mutable.ArrayBuffer
 
 object MainRunner extends App {
 
@@ -41,10 +44,27 @@ object MainRunner extends App {
 
     //FeatureSelectionYClasificadores.getCorrelationMatrix(Spark,path_feat_and_label, Features_columns)
 
-      // ENTRENAR Y TESTEAR MODELOS  TODO --> ver correlaciones y p-values!
+      // ENTRENAR, TESTEAR Y EXPORTAR MODELOS  TODO --> ver correlaciones y p-values!
 
-     FeatureSelectionYClasificadores.EntrenarModelosYEvaluar(Spark, path_feat_and_label,Features_columns)
-     //FeatureSelectionYClasificadores.importAndEvaluate(Spark,path_feat_and_label, Features_columns)
+        val  pathModelo = "jar:file:/home/dran/Escritorio/Martín/Challenge/ScalaMod5/MODELOS/DECISION_TREE.jar"
+    //  val  pathModelo = "jar:file:/home/dran/Escritorio/Martín/Challenge/ScalaMod5/MODELOS/RANDOM_FOREST.jar"
+    //  val  pathModelo = "jar:file:/home/dran/Escritorio/Martín/Challenge/ScalaMod5/MODELOS/LOGISTIC_REGRESSION.jar"
+
+    val accuracy_train_test: ArrayBuffer[Array[Double]] = ArrayBuffer(Array(1,5))
+
+    val forcycle = Array(1,3,5,8,10,12,14,17,
+                          20,25,30,35,40,45,50,
+                          55, 60, 65, 70, 75, 80,
+                          85, 90 ,95, 100,120,140,160,180,200,230,260, 300, 350, 400)
+
+
+    val resultadoLoco  = forcycle.map( x => FeatureSelectionYClasificadores.EntrenarModelosYEvaluar(Spark, path_feat_and_label, Features_columns, pathModelo, 100*x, 10*x))
+
+    resultadoLoco.map(x => println( s"${x(0)}, ${x(1)},"))
+    // IMPORTAR MODELO Y PREDECIR
+
+     //FeatureSelectionYClasificadores.importAndEvaluate(Spark, path_feat_and_label, Features_columns, pathModelo)
+
 
     // OBS: Comparando la accuracy entre los datos completos y parciales (mod5), no hay diferencia. Es lo mismo usar todoo el dataset que el 20%
 

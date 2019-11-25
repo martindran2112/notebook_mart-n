@@ -1,6 +1,7 @@
 package preprocesamiento
 import java.net.URI
 
+import ml.bundle.hdfs.HadoopBundleFileSystem
 import org.apache.avro.io.Encoder
 import preprocesamiento.Preproc.readParquetHDFS
 import org.apache.spark.sql.{DataFrame, SparkSession, types}
@@ -14,7 +15,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.udf
 import ml.combust.bundle.BundleFile
 import ml.combust.mleap.spark.SparkSupport._
-import org.apache.spark.ml.PipelineModel
 import org.apache.spark.ml.bundle.SparkBundleContext
 import resource._
 
@@ -22,21 +22,21 @@ import scala.util.Either
 
 object FeatureSelectionYClasificadores  {
 
-  def featureSelection(Spark: SparkSession, path: String, feature_columns: Array[String], test_size: Double): (DataFrame, DataFrame) = {
+  def featureSelection(Spark: SparkSession, path: String, feature_columns: Array[String], test_size: Double, seed: Int, limit: Int): (DataFrame, DataFrame) = {
 
     val df_FeatAndLabel =  readParquetHDFS(Spark, path) //Spark.read.format("parquet").option("header", "true").option("inferSchema", "true").load(path)  //
 
     val N_fugas = df_FeatAndLabel.filter("estado = 1").count().toInt
-                  println("N° labels con fugas: " + N_fugas + "\n")
+    //println("N° labels con fugas: " + N_fugas + "\n")
 
     //val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").union(df_FeatAndLabel.filter("estado = 0").limit(N_fugas))
-    val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").limit(2000).union(df_FeatAndLabel.filter("estado = 0").limit(2000))
+    val df_fts_select1 = df_FeatAndLabel.filter("estado = 1").limit(limit).union(df_FeatAndLabel.filter("estado = 0").limit(limit))
 
     val assembler = new VectorAssembler().setInputCols(feature_columns).setOutputCol("features")
 
     val output = assembler.transform(df_fts_select1)//.select("features", "estado")
 
-    val splits = output.randomSplit(Array(1-test_size, test_size), seed = 1235L)
+    val splits = output.randomSplit(Array(1-test_size, test_size), seed = seed)
     (splits(0), splits(1))
 
   }
@@ -91,7 +91,7 @@ object FeatureSelectionYClasificadores  {
   }
 
 
-  def Evaluador(df_test: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel]): (String, Double) = {
+  def Evaluador(df_test: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel]): (Double, Double) = {
 
     val y = model match {
       case Left(l) => l match{
@@ -120,48 +120,52 @@ object FeatureSelectionYClasificadores  {
 
 
 
-    ("Accuracy => " +  "%3.2f".format(mAccuracy*100)  + "%", bMetrics.areaUnderROC() )
+    //("Accuracy => " +  "%3.2f".format(mAccuracy*100)  + "%", bMetrics.areaUnderROC() )
+    (mAccuracy, bMetrics.areaUnderROC() )
 
   }
 
-  def EntrenarModelosYEvaluar(Spark: SparkSession, path: String, features_columns: Array[String]): Unit = {
+  def EntrenarModelosYEvaluar(Spark: SparkSession, path: String, features_columns: Array[String], pathExport: String, seed: Int, limit: Int): Array[Double] = {
 
-    val (df_train, df_test) = featureSelection(Spark, path, features_columns, 0.25)
+    val (df_train, df_test) = featureSelection(Spark, path, features_columns, 0.25, seed, limit)
 
     df_train.cache(); df_test.cache()
 
-    val modelLogReg = TrainLogisticRegression(df_train)
+/*    val modelLogReg = TrainLogisticRegression(df_train)
     val (acc_Logit_test, auc_Logit_test) = Evaluador(df_test, Right(modelLogReg))
     val (acc_Logit_train, auc_Logit_train) = Evaluador(df_train, Right(modelLogReg))
 
+
+    val modelRandFor = TrainRandomForest(df_train,20, seed)
+    val (acc_RandFor_test, auc_RandFor_test) = Evaluador(df_test, Left(Right(modelRandFor)))
+    val (acc_RandFor_train, auc_RandFor_train) = Evaluador(df_train, Left(Right(modelRandFor)))
+*/
     val modelDecTree = TrainDecisionTree(df_train)
     val (acc_DecTree_test, auc_DecTree_test)= Evaluador(df_test, Left(Left(modelDecTree)))
     val (acc_DecTree_train, auc_DecTree_train)= Evaluador(df_train, Left(Left(modelDecTree)))
 
-    val modelRandFor = TrainRandomForest(df_train,20, 154)
-    val (acc_RandFor_test, auc_RandFor_test) = Evaluador(df_test, Left(Right(modelRandFor)))
-    val (acc_RandFor_train, auc_RandFor_train) = Evaluador(df_train, Left(Right(modelRandFor)))
-
-    println("Regresión Logística: ")
+ /*   println("Regresión Logística: ")
     println("Train " + acc_Logit_train +  ";  AUC = " + auc_Logit_train  + "\n")
     println("Test " + acc_Logit_test +  ";  AUC = " + auc_Logit_test + "\n")
-    println("-------------------------")
-
-    println("Decision Tree: ")
-    println("Train " + acc_DecTree_train +  ";  AUC = " + auc_DecTree_train +  "\n")
-    println("Test " + acc_DecTree_test +  ";  AUC = " + auc_DecTree_test +   "\n")
     println("-------------------------")
 
     println("Random Forest: ")
     println("Train " + acc_RandFor_train +  ";  AUC = " + auc_RandFor_train +  "\n")
     println("Test " + acc_RandFor_test +  ";  AUC = " + auc_RandFor_test +   "\n")
+    println("-------------------------")
 
+    println("Decision Tree: ")
+    println("Train " + acc_DecTree_train +  ";  AUC = " + auc_DecTree_train +  "\n")
+    println("Test " + acc_DecTree_test +  ";  AUC = " + auc_DecTree_test +   "\n")
+*/
 
-    exportModel(df_train, Left(Left(modelDecTree)))
+    df_train.unpersist(); df_test.unpersist()
+    //exportModel(df_train, Left(Left(modelDecTree)), pathExport)
+    Array(acc_DecTree_train, acc_DecTree_test)
 
   }
 
-  def exportModel(df: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel]): Unit ={
+  def exportModel(df: DataFrame, model: Either[Either[DecisionTreeClassificationModel, RandomForestClassificationModel], LogisticRegressionModel], pathExport: String): Unit ={
 
     val y = model match {
       case Left(l) => l match{
@@ -175,18 +179,17 @@ object FeatureSelectionYClasificadores  {
 
     implicit val context = SparkBundleContext().withDataset(sparkTransformed)
 
-    // TODO --> exportar a .jar
+    // TODO --> exportar a REDIS
     // "hdfs://localhost:8020/tmp/MODELOS/DECISION_TREE.jar"
-    val pathDecTreeModelo = "jar:file:/home/dran/Escritorio/Martín/Challenge/ScalaMod5/MODELOS/DECISION_TREE.jar"
 
-    (for(modelFile <- managed(BundleFile(pathDecTreeModelo) ) ) yield {
+    (for(modelFile <- managed(BundleFile(pathExport) ) ) yield {
       y.writeBundle.save(modelFile)(context)
     }).tried.get
 
   }
 
 
-  def importAndEvaluate(Spark: SparkSession, path: String, feature_columns: Array[String]):Unit = {
+  def importAndEvaluate(Spark: SparkSession, path: String, feature_columns: Array[String], pathImport: String):  Unit = {
 
     val df_FeatAndLabel =  readParquetHDFS(Spark, path) //Spark.read.format("parquet").option("header", "true").option("inferSchema", "true").load(path)  //
 
@@ -194,12 +197,10 @@ object FeatureSelectionYClasificadores  {
 
     val assembler = new VectorAssembler().setInputCols(feature_columns).setOutputCol("features")
 
-    val df_evaluate = assembler.transform(df_fts_select1).select("features", "estado")
+    val df_evaluate = assembler.transform(df_fts_select1)//.select("features", "estado")
     df_evaluate.cache()
 
-    val pathDecTreeModelo = "jar:file:/home/dran/Escritorio/Martín/Challenge/ScalaMod5/MODELOS/DECISION_TREE.jar"
-
-    val jarBundle = (for(bundle <- managed(BundleFile(pathDecTreeModelo))) yield {
+    val jarBundle = (for(bundle <- managed(BundleFile(pathImport))) yield {
       bundle.loadSparkBundle().get
     }).opt.get
 
@@ -207,8 +208,8 @@ object FeatureSelectionYClasificadores  {
 
     val results = loadedModel.transform(df_evaluate)
 
-    results.show(200)
-
+    results.select("deuda_vigente",  "deuda_directa_morosa90", "deuda_directa_vencida", "deuda_directa_mora180",
+      "deuda_indirecta_mora180","estado","prediction").show(200)
 
   }
 
@@ -229,10 +230,11 @@ object FeatureSelectionYClasificadores  {
 
   def Ensamble(Spark: SparkSession, path: String, features_columns: Array[String]): Unit = {
 
-    val (df_train, df_test) = featureSelection(Spark, path, features_columns, 0.25)
+    val (df_train, df_test) = featureSelection(Spark, path, features_columns, 0.25,1500, 2000)
 
     df_train.cache();
     df_test.cache()
+
     val modelLogReg = TrainLogisticRegression(df_train)
     val modelDecTree = TrainDecisionTree(df_train)
     val modelRandFor = TrainRandomForest(df_train, 20, 154)
